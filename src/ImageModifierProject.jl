@@ -13,9 +13,6 @@ end
 Image(w,h) = Image(w, h, zeros(UInt8, w, h))
 
 
-const scratchpad = Image(500, 500) # No DB integration for now.
-
-
 
 function imgToStr(img::Image, x::Int=0, y::Int=0, w::Int=img.width, h::Int=img.height)
   data = join(vec(string.(img.data[1+x : x+w, 1+y : y+h], base=16))) # Column-major.
@@ -220,61 +217,65 @@ div.color.selected:hover { border-color: #03a9f4; }
 
 
 
-push!(ARGS, "8081")
-if size(ARGS)[1] < 1
-  throw("Too few args; expected the port")
-end
-server = Sockets.listen(Sockets.InetAddr("0.0.0.0", parse(Int64, ARGS[1])))
+function __init__() # Ah yes, execute non-__init__ code during pre-compilation.
+  args = ARGS
+  push!(args, "8081")
+  if size(args)[1] < 1
+    throw("Too few args; expected the port")
+  end
+  server = Sockets.listen(Sockets.InetAddr("0.0.0.0", parse(Int64, args[1])))
 
 
 
-connections = []
-HTTP.serve(server=server; stream=true) do stream::HTTP.Stream
-  if stream.message.target == "/"
-    write(stream, editorHtml)
-    stream.message.response.status = 200
-  elseif stream.message.target == "/image"
-    # Set up a WebSocket: send image & updates, receive updates.
-    stream.message.response.status = 200
-    HTTP.WebSockets.upgrade(stream) do ws
-      # Send the whole image, then receive one-pixel updates unless they are too fast.
-      img = scratchpad
-      push!(connections, ws)
-      write(ws, imgToStr(img) * "\n\n")
-      last_update = time()
-      try
-        while !eof(ws)
-          data = String(readavailable(ws)) # Still don't know if it's one-read-per-message, or shitty.
-          values = map(x -> tryparse(Int64, x), split(strip(data), " "))
-          if size(values)[1] != 3
-            continue
-          end
-          x, y, value = values
-          if x < 0 || y < 0 || value < 0 || x >= img.width || y >= img.height || value >= 16
-            continue
-          end
-          new_update = time()
-          if new_update - last_update > .5
-            # Update and broadcast, at most once per second.
-            img.data[x+1, y+1] = value
-            update_msg = string(imgToStr(img, x, y, 1, 1))
-            for conn in connections
-              write(conn, update_msg)
+  scratchpad = Image(500, 500) # No DB integration for now.
+  connections = []
+  HTTP.serve(server=server; stream=true) do stream::HTTP.Stream
+    if stream.message.target == "/"
+      write(stream, editorHtml)
+      stream.message.response.status = 200
+    elseif stream.message.target == "/image"
+      # Set up a WebSocket: send image & updates, receive updates.
+      stream.message.response.status = 200
+      HTTP.WebSockets.upgrade(stream) do ws
+        # Send the whole image, then receive one-pixel updates unless they are too fast.
+        img = scratchpad
+        push!(connections, ws)
+        write(ws, imgToStr(img) * "\n\n")
+        last_update = time()
+        try
+          while !eof(ws)
+            data = String(readavailable(ws)) # Still don't know if it's one-read-per-message, or shitty.
+            values = map(x -> tryparse(Int64, x), split(strip(data), " "))
+            if size(values)[1] != 3
+              continue
             end
-          else
-            # Fail.
-            write(ws, string(imgToStr(img, x, y, 1, 1)))
+            x, y, value = values
+            if x < 0 || y < 0 || value < 0 || x >= img.width || y >= img.height || value >= 16
+              continue
+            end
+            new_update = time()
+            if new_update - last_update > .5
+              # Update and broadcast, at most once per second.
+              img.data[x+1, y+1] = value
+              update_msg = string(imgToStr(img, x, y, 1, 1))
+              for conn in connections
+                write(conn, update_msg)
+              end
+            else
+              # Fail.
+              write(ws, string(imgToStr(img, x, y, 1, 1)))
+            end
+            last_update = new_update
           end
-          last_update = new_update
+        catch
+          # Socket went away (disconnected), most likely. Ignore it.
         end
-      catch
-        # Socket went away (disconnected), most likely. Ignore it.
+        filter!(x -> x !== ws, connections)
       end
-      filter!(x -> x !== ws, connections)
+    else
+      write(stream, "404 not found (this is a good error page, what are you talking about)")
+      stream.message.response.status = 404
     end
-  else
-    write(stream, "404 not found (this is a good error page, what are you talking about)")
-    stream.message.response.status = 404
   end
 end
 
