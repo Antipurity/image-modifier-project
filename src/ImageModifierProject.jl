@@ -1,5 +1,6 @@
 module ImageModifierProject
 
+using Sockets
 using HTTP
 
 
@@ -219,10 +220,11 @@ div.color.selected:hover { border-color: #03a9f4; }
 
 
 
-using Sockets
-host = "0.0.0.0"
-port = parse(Int64,ARGS[1])
-server = Sockets.listen(Sockets.InetAddr(host, port))
+push!(ARGS, "8081")
+if size(ARGS)[1] < 1
+  throw("Too few args; expected the port")
+end
+server = Sockets.listen(Sockets.InetAddr("0.0.0.0", parse(Int64, ARGS[1])))
 
 
 
