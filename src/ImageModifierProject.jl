@@ -2,22 +2,7 @@ module ImageModifierProject
 
 using Sockets
 using HTTP
-
-
-
-mutable struct Image
-  width::Int
-  height::Int
-  data::Array{UInt8,2}
-end
-Image(w,h) = Image(w, h, zeros(UInt8, w, h))
-
-
-
-function imgToStr(img::Image, x::Int=0, y::Int=0, w::Int=img.width, h::Int=img.height)
-  data = join(vec(string.(img.data[1+x : x+w, 1+y : y+h], base=16))) # Column-major.
-  return string(x, " ", y, " ", w, " ", h, " ", data)
-end
+using LibPQ
 
 
 
@@ -217,18 +202,99 @@ div.color.selected:hover { border-color: #03a9f4; }
 
 
 
-function __init__() # Ah yes, execute non-__init__ code during pre-compilation.
-  args = ARGS
-  push!(args, "8081")
-  if size(args)[1] < 1
+mutable struct Image
+  width::Int
+  height::Int
+  data::Array{UInt8,2}
+end
+Image(w,h) = Image(w, h, zeros(UInt8, w, h))
+
+
+
+function imgToStr(img::Image, x::Int=0, y::Int=0, w::Int=img.width, h::Int=img.height; onlyData = false)
+  data = join(vec(string.(img.data[1+x : x+w, 1+y : y+h], base=16))) # Column-major.
+  if onlyData
+    data
+  else
+    string(x, " ", y, " ", w, " ", h, " ", data)
+  end
+end
+function strToImg(w::Int, h::Int, data::String)
+  if w*h != length(data)
+    Image(w, h)
+  else
+  end
+  data = reshape(parse.(UInt8, collect(data), base=16), (w, h))
+  Image(w, h, data)
+end
+
+
+
+conn = nothing
+scratchpad = nothing
+had_updates = false
+function createDB(conn)
+  execute(conn, """
+  CREATE TABLE IF NOT EXISTS image (
+    id integer PRIMARY KEY,
+    width integer NOT NULL,
+    height integer NOT NULL,
+    data text NOT NULL
+  )
+  """)
+end
+function saveToDB(conn, img)
+  data = imgToStr(img; onlyData = true)
+  result = execute(conn, """
+  INSERT INTO image (id, width, height, data)
+  VALUES (0, \$1, \$2, \$3)
+  ON CONFLICT (id) DO UPDATE
+    SET width = excluded.width, height = excluded.height, data = excluded.data;
+  """, [img.width, img.height, data])
+  # Sure hope there are no exceptions, in this no-try-catch code.
+end
+function loadFromDB(conn, width, height)
+  try
+    result = execute(conn, """
+    SELECT width, height, data FROM image WHERE id=0
+    """)
+    w, h, data = result[1,1], result[1,2], result[1,3]
+    strToImg(width, height, data)
+  catch err
+    Image(width, height)
+  end
+end
+function periodicallySaveImageToDB(t)
+  global had_updates
+  if !had_updates return end
+  had_updates = false
+  saveToDB(conn, scratchpad)
+end
+
+
+
+function __init__() # Ah yes, Julia, execute non-__init__ code during pre-compilation. Makes sense.
+  # Every hour, save the image to the DB if it changed.
+  global conn, scratchpad, had_updates
+  conn = LibPQ.Connection(ENV["DATABASE_URL"])
+  createDB(conn)
+  scratchpad = loadFromDB(conn, 500, 500)
+  Timer(periodicallySaveImageToDB, 3600; interval = 3600)
+
+
+
+  # Yes, ARGS is totally a compile-time constant, and pre-compilation should really complain about ARGS[1].
+  ar = ARGS
+  push!(ar, "8081")
+  if size(ar)[1] < 1
     throw("Too few args; expected the port")
   end
-  server = Sockets.listen(Sockets.InetAddr("0.0.0.0", parse(Int64, args[1])))
+  server = Sockets.listen(Sockets.InetAddr("0.0.0.0", parse(Int64, ar[1])))
 
 
 
-  scratchpad = Image(500, 500) # No DB integration for now.
   connections = []
+  println("Serving…")
   HTTP.serve(server=server; stream=true) do stream::HTTP.Stream
     if stream.message.target == "/"
       write(stream, editorHtml)
@@ -238,13 +304,15 @@ function __init__() # Ah yes, execute non-__init__ code during pre-compilation.
       stream.message.response.status = 200
       HTTP.WebSockets.upgrade(stream) do ws
         # Send the whole image, then receive one-pixel updates unless they are too fast.
+        global had_updates
         img = scratchpad
         push!(connections, ws)
         write(ws, imgToStr(img) * "\n\n")
         last_update = time()
         try
           while !eof(ws)
-            data = String(readavailable(ws)) # Still don't know if it's one-read-per-message, or shitty.
+            data = String(readavailable(ws)) # Still don't know if it's one-read-per-message, or shitty. No info on the Web; not about to do stress-tests to know.
+            had_updates = true
             values = map(x -> tryparse(Int64, x), split(strip(data), " "))
             if size(values)[1] != 3
               continue
@@ -282,10 +350,6 @@ end
 
 
 
-# TODO: Periodically synchronize the image into a PostgreSQL database.
-#   TODO: Download a Postgre server.
-#   ...That piece of shit is just refusing to work. Should we go DB-less??
 # TODO: Use Docker for this, just to get experience.
-# TODO: ...Maybe, we should be deploying to Heroku from the start, even before the DB, to have a base to extend?
 
 end # module
