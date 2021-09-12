@@ -2,9 +2,11 @@
   <img alt=Screenshot src=pristine-white-canvas.png>
 </p>
 
-This is the source code for a Julia web server that allows users to draw on a single 500×500 image.
+This is the source code for a Julia web server that allows users to collaboratively draw on a single 500×500 image.
 
 Deployed on [Heroku](https://image-modifier-project.herokuapp.com/).
+
+Conclusion from developing this, and trying to deploy it: Julia is (still) poorly-suited for web servers.
 
 ---
 
