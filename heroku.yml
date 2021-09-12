@@ -4,3 +4,5 @@ setup:
 build:
   docker:
     web: Dockerfile
+run:
+  web: julia --project src/ImageModifierProject.jl $PORT
