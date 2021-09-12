@@ -6,10 +6,6 @@ using LibPQ
 
 
 
-using Pkg; Pkg.activate("."); Pkg.instantiate() # Eh.
-
-
-
 const editorHtml = """
 <!DOCTYPE html>
 <html lang=en>
