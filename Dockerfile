@@ -1,5 +1,6 @@
 FROM julia
 WORKDIR /
 COPY . .
-RUN julia -e "using Pkg; Pkg.instantiate(); Pkg.precompile();"
-CMD ["julia", "--project", "src/ImageModifierProject.jl", "$PORT"]
+RUN julia -e "import Pkg; Pkg.activate(\".\"); Pkg.instantiate(); Pkg.API.precompile();"
+RUN julia -e "import Pkg; Pkg.activate(\".\"); println(keys(Pkg.API.project().dependencies))"
+CMD julia --project src/ImageModifierProject.jl $PORT
