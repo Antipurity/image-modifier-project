@@ -279,7 +279,7 @@ function __init__() # Ah yes, Julia, execute non-__init__ code during pre-compil
   conn = LibPQ.Connection(ENV["DATABASE_URL"])
   createDB(conn)
   scratchpad = loadFromDB(conn, 500, 500)
-  Timer(periodicallySaveImageToDB, 3600; interval = 3600)
+  Timer(periodicallySaveImageToDB, 600; interval = 600)
 
 
 
@@ -351,5 +351,15 @@ end
 
 
 # TODO: Use Docker for this, just to get experience.
+#   ...Its installation seriously wants us to relaunch the OS. What are we supposed to do now...
+#     Choices:
+#       1. Get started on Keychain, the lightweight encryption key manager. (Always maintains a persisted array of possibly-owned keys, each with URL-regex and public and possibly private keys. UI can encrypt/decrypt a message right there, in one <textarea>, using ALL keys (auto-detect encrypt-ness and key-ness). Able to save/load via a file too.)
+#         (A message can be either a key, or an encrypted message. Both indicated by a magic number.)
+#         (And an extension that auto-decrypts all character-data and attributes (private-key-decrypt) that contain base64-encoded messages, and allows adding all base64-encoded keys by clicking a button near them, and allows encrypting a <textarea>/<input> (private-key-encrypt) (via overriding getters/setters for .value on <textarea>/<input>s).)
+#       2. Get the personal website up to speed, i.e., existing, and containing the 2048 and the image-modifier projects (and Conceptual, and WebEnv I guess).
+#         Need a self-description ("A software engineer that builds stuff", sure; optimize later).
+#         Need dark-gray-with-a-hint-of-steely-blue background (#36393e), and an onmousemove handler that sets CSS --x and --y on hovered-over elements (so that we can do cursor-based gradients in CSS), and removes them as needed.
+#         Need a component for projects: a card for each, linking to the more involved description.
+#       TODO: ...I think the persona is more pertinent at this moment.
 
 end # module
